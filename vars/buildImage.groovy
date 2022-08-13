@@ -1,5 +1,5 @@
+import com.example.Docker
+
 def call (String tag ){
-
-    app = docker.build("medch1/"+tag, " .")
-
+    return new Docker(this).buildDockerImage(tag)
 }
