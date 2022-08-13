@@ -1,0 +1,73 @@
+@Library('')
+def app
+def gv
+pipeline {
+    agent any
+    environment {
+        DOCKERHUB_CREDENTIALS = credentials('docker_hub')
+    }
+    stages {
+        stage('Clone repository') {
+            steps {
+
+                checkout scm
+
+            }
+        }
+        stage('Init') {
+            steps {
+                script{
+                    gv = load "script.groovy"
+                }
+            }
+        }
+        stage('Build image') {
+            steps {
+                script{
+                    gv.job('Build')
+                    app = docker.build("medch1/simpleapp", " .")
+                }
+            }
+        }
+        stage('Push image') {
+
+            steps {
+                script{
+                    env.CONFIRMATION = input message:"Confirm pushing image ?", ok: "done", parameters:[choice(name: 'CONFIRMATION',choices: ['yes','no'],description:'')]
+
+
+
+                    if(env.CONFIRMATION == 'yes') {
+                        gv.job('Push')
+                        sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
+                        sh 'docker push medch1/simpleapp '
+                    } else {
+                        echo "you chose ${CONFIRMATION}"
+                    }
+
+
+
+
+                }
+
+            }
+        }
+
+        stage('Snyk') {
+            steps {
+                script{
+                    gv.job('Scan')
+                    withCredentials([string(credentialsId: 'snyk_token_secret', variable: 'SNYK_TOKEN')]) {
+                        sh 'snyk auth $SNYK_TOKEN'
+                    }
+                    def variable = sh(script:'snyk container test registry.hub.docker.com/medch1/simpleapp --severity-threshold=critical', returnStatus: true)
+                    echo "error code = ${variable}"
+                    if (variable != 0) {
+                        discordSend description: "Vulnerability alert for the " + env.JOB_NAME +"\n Build: " +env.BUILD_NUMBER +" ", footer: "", link: env.BUILD_URL, result: 'FAILURE', title: env.JOB_NAME, webhookURL: "https://discord.com/api/webhooks/982963474802049054/DtXTfmbMIN4aj_jgDE1FryzOuBFmUkLyAYjGYKpgvSp074BSFHf1u42nNlmFZ10_BXXf"
+                    }
+                }
+            }
+        }
+
+    }
+}
